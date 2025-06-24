@@ -164,12 +164,15 @@ async function createNewSheet(sheetTitle: string): Promise<boolean> {
             errorMessage = error;
         } else if (typeof error === 'object' && error !== null) {
             const potentialAxiosError = error as Partial<AxiosLikeError>;
-            if (potentialAxiosError.response && potentialAxiosError.response.data) {
-                console.error('Google API Error Response Data:', potentialAxiosError.response.data);
-                if (potentialAxiosError.response.data.error && typeof potentialAxiosError.response.data.error === 'object' && potentialAxiosError.response.data.error.message) {
-                    errorMessage = potentialAxiosError.response.data.error.message;
-                } else if (potentialAxiosError.response.data.message) {
-                    errorMessage = potentialAxiosError.response.data.message;
+            if (potentialAxiosError.response && typeof potentialAxiosError.response === 'object' && potentialAxiosError.response !== null) {
+                const responseData = potentialAxiosError.response.data;
+                if (responseData && typeof responseData === 'object' && responseData !== null) {
+                    console.error('Google API Error Response Data:', responseData);
+                    if (responseData.error && typeof responseData.error === 'object' && responseData.error.message) {
+                        errorMessage = responseData.error.message;
+                    } else if (responseData.message) {
+                        errorMessage = responseData.message;
+                    }
                 }
             }
         }
