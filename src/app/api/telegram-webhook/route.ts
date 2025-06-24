@@ -33,19 +33,19 @@ async function sendMessage(chatId: number, text: string) {
                 text: text,
             }),
         });
-        console.log(`Message sent to chat ${chatId}: ${text}`);
+        console.log(`[${new Date().toLocaleString('id-ID')}] Message sent to chat ${chatId}: ${text}`);
     } catch (error) {
         console.error('Failed to send message to Telegram:', error);
     }
 }
 
-async function appendIncomeToSheet(date: string, amount: number, description: string) {
+async function appendIncomeToSheet(date: string, amount: number, description: string): Promise<boolean> {
     if (!GOOGLE_SHEET_ID) {
         console.error('Error: GOOGLE_SHEET_ID is not configured in environment variables.');
         throw new Error('Google Sheet ID not configured. Please check your .env.local or Vercel settings.');
     }
 
-    const sheetName = 'Sheet1'; // Pastikan ini sesuai dengan nama sheet Anda di Google Sheets!
+    const sheetName = 'Rekap-pengeluaran'; // <--- PERUBAHAN DI SINI
     const range = `${sheetName}!A:C`;
 
     try {
@@ -57,37 +57,52 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
                 values: [[date, amount, description]],
             },
         });
-        console.log('Data successfully appended to Google Sheet:', response.data);
+        console.log(`[${new Date().toLocaleString('id-ID')}] Data successfully appended to Google Sheet:`, response.data);
         return true;
     } catch (error: unknown) {
-        console.error('Failed to append data to Google Sheet:', error);
-        if (typeof error === 'object' && error !== null) {
-            if ('response' in error && typeof (error as any).response === 'object' && (error as any).response !== null && 'data' in (error as any).response) {
-                console.error('Google API Error Response Data:', (error as any).response.data);
-            }
-            const errorMessage = ('message' in error && typeof (error as any).message === 'string') ? (error as any).message : 'Unknown error occurred while appending data.';
-            throw new Error(`Could not append data to Google Sheet. Error: ${errorMessage}. Check permissions or Sheet ID.`);
+        console.error(`[${new Date().toLocaleString('id-ID')}] Failed to append data to Google Sheet:`, error);
+
+        let errorMessage = 'An unexpected error occurred while appending data.';
+
+        if (error instanceof Error) {
+            errorMessage = error.message;
         } else if (typeof error === 'string') {
-            throw new Error(`Could not append data to Google Sheet. Error: ${error}. Check permissions or Sheet ID.`);
-        } else {
-            throw new Error('Could not append data to Google Sheet. An unexpected error occurred. Check permissions or Sheet ID.');
+            errorMessage = error;
         }
+
+        if (typeof error === 'object' && error !== null && 'response' in error) {
+            const axiosErrorResponse = (error as { response?: { data?: { error?: { message?: string } | string; message?: string } } }).response;
+
+            if (axiosErrorResponse?.data) {
+                console.error('Google API Error Response Data:', axiosErrorResponse.data);
+
+                if (typeof axiosErrorResponse.data === 'object' && axiosErrorResponse.data !== null) {
+                    if ('error' in axiosErrorResponse.data && typeof (axiosErrorResponse.data as any).error === 'object' && (axiosErrorResponse.data as any).error !== null && 'message' in (axiosErrorResponse.data as any).error) {
+                        errorMessage = (axiosErrorResponse.data as any).error.message;
+                    } else if ('message' in axiosErrorResponse.data && typeof (axiosErrorResponse.data as any).message === 'string') {
+                        errorMessage = (axiosErrorResponse.data as any).message;
+                    }
+                }
+            }
+        }
+
+        throw new Error(`Could not append data to Google Sheet. Error: ${errorMessage}. Please check permissions, Sheet ID, and network connection.`);
     }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<NextResponse> {
     const body = await req.json();
     const message = body.message;
 
     if (!message) {
-        console.log('Received non-message update from Telegram.');
+        console.log(`[${new Date().toLocaleString('id-ID')}] Received non-message update from Telegram.`);
         return NextResponse.json({ status: 'No message received' }, { status: 200 });
     }
 
     const chatId = message.chat.id;
     const text = message.text;
 
-    console.log(`[${new Date().toLocaleString('id-ID')}] Received message from ${chatId}: "${text}"`);
+    console.log(`[${new Date().toLocaleString('id-ID')}] Processing message from chat ${chatId}: "${text}"`);
 
     if (text && text.startsWith('/income')) {
         const parts = text.split(' ');
@@ -109,7 +124,7 @@ export async function POST(req: NextRequest) {
                 await appendIncomeToSheet(date, amount, description);
                 await sendMessage(chatId, `🎉 Berhasil! Income Rp${amount.toLocaleString('id-ID')} (${description}) sudah dicatat.`);
             } catch (error) {
-                console.error('Error handling /income command:', error);
+                console.error(`[${new Date().toLocaleString('id-ID')}] Error handling /income command for chat ${chatId}:`, error);
                 await sendMessage(chatId, 'Maaf, terjadi kesalahan saat mencatat income. Silakan coba lagi nanti.');
             }
         } else {
