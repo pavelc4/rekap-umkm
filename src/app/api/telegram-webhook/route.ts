@@ -54,8 +54,6 @@ interface AxiosLikeError extends Error {
         data?: GoogleApiErrorResponseData;
         status?: number;
         headers?: Record<string, string>;
-        config?: any;
-        request?: any;
     };
 }
 
