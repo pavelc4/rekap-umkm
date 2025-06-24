@@ -1,16 +1,10 @@
-
-
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 
-
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
-
-
 const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-
 
 const auth = new google.auth.GoogleAuth({
     credentials: {
@@ -20,9 +14,7 @@ const auth = new google.auth.GoogleAuth({
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
-
 const sheets = google.sheets({ version: 'v4', auth });
-
 
 async function sendMessage(chatId: number, text: string) {
     if (!TELEGRAM_BOT_TOKEN) {
@@ -47,20 +39,13 @@ async function sendMessage(chatId: number, text: string) {
     }
 }
 
-// --- Bagian 4: Fungsi untuk Menambahkan Data ke Google Sheet ---
-/**
- * Fungsi untuk menambahkan baris data income ke Google Sheet.
- * @param date Tanggal transaksi (misal: "24/06/2025")
- * @param amount Jumlah income (misal: 150000)
- * @param description Deskripsi transaksi (misal: "Penjualan martabak")
- */
 async function appendIncomeToSheet(date: string, amount: number, description: string) {
     if (!GOOGLE_SHEET_ID) {
         console.error('Error: GOOGLE_SHEET_ID is not configured in environment variables.');
         throw new Error('Google Sheet ID not configured. Please check your .env.local or Vercel settings.');
     }
 
-    const sheetName = 'Sheet1';
+    const sheetName = 'Sheet1'; // Pastikan ini sesuai dengan nama sheet Anda di Google Sheets!
     const range = `${sheetName}!A:C`;
 
     try {
@@ -73,17 +58,22 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
             },
         });
         console.log('Data successfully appended to Google Sheet:', response.data);
-        return true; // Berhasil
-    } catch (error: any) { // Menggunakan 'any' untuk mempermudah penanganan error dari library
+        return true;
+    } catch (error: unknown) {
         console.error('Failed to append data to Google Sheet:', error);
-        // Lebih detail untuk debugging:
-        if (error.response && error.response.data) {
-            console.error('Google API Error Response Data:', error.response.data);
+        if (typeof error === 'object' && error !== null) {
+            if ('response' in error && typeof (error as any).response === 'object' && (error as any).response !== null && 'data' in (error as any).response) {
+                console.error('Google API Error Response Data:', (error as any).response.data);
+            }
+            const errorMessage = ('message' in error && typeof (error as any).message === 'string') ? (error as any).message : 'Unknown error occurred while appending data.';
+            throw new Error(`Could not append data to Google Sheet. Error: ${errorMessage}. Check permissions or Sheet ID.`);
+        } else if (typeof error === 'string') {
+            throw new Error(`Could not append data to Google Sheet. Error: ${error}. Check permissions or Sheet ID.`);
+        } else {
+            throw new Error('Could not append data to Google Sheet. An unexpected error occurred. Check permissions or Sheet ID.');
         }
-        throw new Error(`Could not append data to Google Sheet. Error: ${error.message}. Check permissions or Sheet ID.`);
     }
 }
-
 
 export async function POST(req: NextRequest) {
     const body = await req.json();
@@ -97,18 +87,13 @@ export async function POST(req: NextRequest) {
     const chatId = message.chat.id;
     const text = message.text;
 
-
     console.log(`[${new Date().toLocaleString('id-ID')}] Received message from ${chatId}: "${text}"`);
-
 
     if (text && text.startsWith('/income')) {
         const parts = text.split(' ');
-
         if (parts.length >= 3) {
             const amount = parseFloat(parts[1]);
             const description = parts.slice(2).join(' ');
-
-            // Menggunakan tanggal lokal Indonesia
             const date = new Date().toLocaleDateString('id-ID', {
                 year: 'numeric',
                 month: '2-digit',
@@ -118,7 +103,6 @@ export async function POST(req: NextRequest) {
             if (isNaN(amount) || amount <= 0) {
                 await sendMessage(chatId, '❌ Jumlah income tidak valid. Gunakan format: `/income <jumlah> <deskripsi>` (contoh: `/income 150000 Penjualan Hari Ini`)');
                 return NextResponse.json({ status: 'Invalid amount' }, { status: 200 });
-
             }
 
             try {
@@ -129,18 +113,13 @@ export async function POST(req: NextRequest) {
                 await sendMessage(chatId, 'Maaf, terjadi kesalahan saat mencatat income. Silakan coba lagi nanti.');
             }
         } else {
-
             await sendMessage(chatId, '🤔 Format salah. Gunakan: `/income <jumlah> <deskripsi>`. Contoh: `/income 150000 Penjualan Hari Ini`');
         }
     } else if (text === '/start' || text === '/help') {
-
         await sendMessage(chatId, 'Halo! Saya bot pencatat income UMKM Anda.\nUntuk mencatat income, gunakan format:\n`/income <jumlah> <deskripsi>`\nContoh: `/income 150000 Penjualan Hari Ini`');
     } else {
-
         await sendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk melihat panduan.');
     }
 
-
     return NextResponse.json({ status: 'ok' }, { status: 200 });
-
 }
