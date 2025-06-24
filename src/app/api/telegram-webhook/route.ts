@@ -54,28 +54,56 @@ interface AxiosLikeError extends Error {
         data?: GoogleApiErrorResponseData;
         status?: number;
         headers?: Record<string, string>;
+        config?: any;
+        request?: any;
     };
 }
 
-async function appendIncomeToSheet(date: string, amount: number, description: string): Promise<boolean> {
+async function appendIncomeToSheet(date: string, amount: string, description: string): Promise<boolean> {
     if (!GOOGLE_SHEET_ID) {
         console.error('Error: GOOGLE_SHEET_ID is not configured in environment variables.');
         throw new Error('Google Sheet ID not configured. Please check your .env.local or Vercel settings.');
     }
 
     const sheetName = 'Rekap-pengeluaran';
-    const range = `${sheetName}!A:C`;
+    const headers = ['Tanggal', 'Jumlah', 'Deskripsi'];
+    const headersRange = `${sheetName}!A1:${String.fromCharCode(65 + headers.length - 1)}1`;
 
     try {
-        const response = await sheets.spreadsheets.values.append({
+        const getHeadersResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: GOOGLE_SHEET_ID,
-            range: range,
+            range: headersRange,
+        });
+
+        const existingHeaders = getHeadersResponse.data.values ? getHeadersResponse.data.values[0] : null;
+
+        let headersExist = false;
+        if (existingHeaders && existingHeaders.length === headers.length) {
+            headersExist = headers.every((header, index) => existingHeaders[index] === header);
+        }
+
+        if (!headersExist) {
+            console.log(`Headers not found, writing headers to sheet.`);
+            await sheets.spreadsheets.values.update({
+                spreadsheetId: GOOGLE_SHEET_ID,
+                range: headersRange,
+                valueInputOption: 'RAW',
+                requestBody: {
+                    values: [headers],
+                },
+            });
+            console.log(`Headers written successfully.`);
+        }
+
+        const appendResponse = await sheets.spreadsheets.values.append({
+            spreadsheetId: GOOGLE_SHEET_ID,
+            range: `${sheetName}!A:C`,
             valueInputOption: 'USER_ENTERED',
             requestBody: {
                 values: [[date, amount, description]],
             },
         });
-        console.log('Data successfully appended to Google Sheet:', response.data);
+        console.log('Data successfully appended to Google Sheet:', appendResponse.data);
         return true;
     } catch (error: unknown) {
         console.error('Failed to append data to Google Sheet:', error);
@@ -108,6 +136,50 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
     }
 }
 
+async function createNewSheet(sheetTitle: string): Promise<boolean> {
+    if (!GOOGLE_SHEET_ID) {
+        console.error('Error: GOOGLE_SHEET_ID is not configured.');
+        throw new Error('Google Sheet ID not configured.');
+    }
+
+    try {
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: GOOGLE_SHEET_ID,
+            requestBody: {
+                requests: [{
+                    addSheet: {
+                        properties: {
+                            title: sheetTitle
+                        }
+                    }
+                }]
+            }
+        });
+        console.log(`Sheet "${sheetTitle}" created successfully.`);
+        return true;
+    } catch (error: unknown) {
+        console.error(`Failed to create sheet "${sheetTitle}":`, error);
+        let errorMessage = 'An unexpected error occurred while creating sheet.';
+        if (error instanceof Error) {
+            errorMessage = error.message;
+        } else if (typeof error === 'string') {
+            errorMessage = error;
+        } else if (typeof error === 'object' && error !== null) {
+            const potentialAxiosError = error as Partial<AxiosLikeError>;
+            if (potentialAxiosError.response && potentialAxiosError.response.data) {
+                console.error('Google API Error Response Data:', potentialAxiosError.response.data);
+                if (potentialAxiosError.response.data.error && typeof potentialAxiosError.response.data.error === 'object' && potentialAxiosError.response.data.error.message) {
+                    errorMessage = potentialAxiosError.response.data.error.message;
+                } else if (potentialAxiosError.response.data.message) {
+                    errorMessage = potentialAxiosError.response.data.message;
+                }
+            }
+        }
+        throw new Error(`Could not create sheet. Error: ${errorMessage}. Sheet name might already exist.`);
+    }
+}
+
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
     const body = await req.json();
     const message = body.message;
@@ -125,31 +197,71 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (text && text.startsWith('/income')) {
         const parts = text.split(' ');
         if (parts.length >= 3) {
-            const amount = parseFloat(parts[1]);
-            const description = parts.slice(2).join(' ');
-            const date = new Date().toLocaleDateString('id-ID', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-            });
+            let amountInput = parts[1].toLowerCase();
+            let rawAmount: number;
 
-            if (isNaN(amount) || amount <= 0) {
-                await sendMessage(chatId, '❌ Jumlah income tidak valid. Gunakan format: `/income <jumlah> <deskripsi>` (contoh: `/income 150000 Penjualan Hari Ini`)');
+            if (amountInput.endsWith('k')) {
+                amountInput = amountInput.slice(0, -1);
+                rawAmount = parseFloat(amountInput) * 1000;
+            } else {
+                rawAmount = parseFloat(amountInput);
+            }
+
+            const description = parts.slice(2).join(' ');
+
+            const now = new Date();
+            const monthNamesShort = [
+                'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+            ];
+            const month = monthNamesShort[now.getMonth()];
+            const day = now.getDate().toString().padStart(2, '0');
+            const year = now.getFullYear();
+            const date = `${month}-${day}-${year}`;
+
+            if (isNaN(rawAmount) || rawAmount <= 0) {
+                await sendMessage(chatId, '❌ Jumlah income tidak valid. Gunakan format: `/income <jumlah> <deskripsi>` (contoh: `/income 150000 Penjualan Hari Ini` atau `/income 150k Penjualan Hari Ini`)');
                 return NextResponse.json({ status: 'Invalid amount' }, { status: 200 });
             }
 
+            const formattedAmountIDR = rawAmount.toLocaleString('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2,
+            });
+
             try {
-                await appendIncomeToSheet(date, amount, description);
-                await sendMessage(chatId, `🎉 Berhasil! Income Rp${amount.toLocaleString('id-ID')} (${description}) sudah dicatat.`);
+                await appendIncomeToSheet(date, formattedAmountIDR, description);
+                await sendMessage(chatId, `🎉 Berhasil! Income ${formattedAmountIDR} (${description}) sudah dicatat.`);
             } catch (error) {
                 console.error(`[${new Date().toLocaleString('id-ID')}] Error handling /income command for chat ${chatId}:`, error);
                 await sendMessage(chatId, 'Maaf, terjadi kesalahan saat mencatat income. Silakan coba lagi nanti.');
             }
         } else {
-            await sendMessage(chatId, '🤔 Format salah. Gunakan: `/income <jumlah> <deskripsi>`. Contoh: `/income 150000 Penjualan Hari Ini`');
+            await sendMessage(chatId, '🤔 Format salah. Gunakan: `/income <jumlah> <deskripsi>`. Contoh: `/income 150000 Penjualan Hari Ini` atau `/income 150k Penjualan Hari Ini`');
         }
-    } else if (text === '/start' || text === '/help') {
-        await sendMessage(chatId, 'Halo! Saya bot pencatat income UMKM Anda.\nUntuk mencatat income, gunakan format:\n`/income <jumlah> <deskripsi>`\nContoh: `/income 150000 Penjualan Hari Ini`');
+    } else if (text && text.startsWith('/add_new_sheet')) {
+        const parts = text.split(' ');
+        if (parts.length >= 2) {
+            const newSheetName = parts.slice(1).join(' ').trim();
+            if (newSheetName) {
+                try {
+                    await createNewSheet(newSheetName);
+                    await sendMessage(chatId, `✅ Sheet baru "${newSheetName}" berhasil dibuat!`);
+                } catch (error) {
+                    console.error(`[${new Date().toLocaleString('id-ID')}] Error creating new sheet:`, error);
+                    await sendMessage(chatId, `❌ Gagal membuat sheet baru. Pesan error: ${error.message}.`);
+                }
+            } else {
+                await sendMessage(chatId, '⚠️ Format salah. Gunakan: `/add_new_sheet <nama_sheet_baru>`. Contoh: `/add_new_sheet Laporan Juni`');
+            }
+        } else {
+            await sendMessage(chatId, '⚠️ Format salah. Gunakan: `/add_new_sheet <nama_sheet_baru>`. Contoh: `/add_new_sheet Laporan Juni`');
+        }
+    }
+    else if (text === '/start' || text === '/help') {
+        await sendMessage(chatId, 'Halo! Saya bot pencatat income UMKM Anda.\nUntuk mencatat income, gunakan format:\n`/income <jumlah> <deskripsi>`\nContoh: `/income 150000 Penjualan Hari Ini` atau `/income 150k Penjualan Hari Ini`\n\nUntuk membuat sheet baru:\n`/add_new_sheet <nama_sheet_baru>`\nContoh: `/add_new_sheet Laporan Juni`');
     } else {
         await sendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk melihat panduan.');
     }
