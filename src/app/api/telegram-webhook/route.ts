@@ -141,7 +141,7 @@ async function createNewSheet(sheetTitle: string): Promise<boolean> {
     } catch (error: unknown) {
         console.error(`Failed to create sheet "${sheetTitle}":`, error);
 
-        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
+        let errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
         if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.error?.message) {
             errorMessage = (error as Partial<AxiosLikeError>).response?.data?.error?.message || errorMessage;
         } else if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.message) {
@@ -209,7 +209,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             } catch (error: unknown) {
                 console.error(`[${new Date().toLocaleString('id-ID')}] Error handling /income command for chat ${chatId}:`, error);
 
-                const errorMessageForUser = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
+                let errorMessageForUser = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
                 if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.error?.message) {
                     errorMessageForUser = (error as Partial<AxiosLikeError>).response?.data?.error?.message || errorMessageForUser;
                 } else if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.message) {
@@ -232,7 +232,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 } catch (error: unknown) {
                     console.error(`[${new Date().toLocaleString('id-ID')}] Error creating new sheet:`, error);
 
-                    const errorMessageForUser = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
+                    let errorMessageForUser = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
                     if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.error?.message) {
                         errorMessageForUser = (error as Partial<AxiosLikeError>).response?.data?.error?.message || errorMessageForUser;
                     } else if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.message) {
