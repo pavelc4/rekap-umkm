@@ -72,25 +72,23 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
     } catch (error: unknown) {
         console.error('Failed to append data to Google Sheet:', error);
 
-        let errorMessage = 'An unexpected error occurred while appending data.';
+        let errorMessage = 'An unexpected error occurred.';
 
         if (error instanceof Error) {
             errorMessage = error.message;
         } else if (typeof error === 'string') {
             errorMessage = error;
-        }
+        } else if (typeof error === 'object' && error !== null) {
+            if ('response' in error && typeof (error as any).response === 'object' && (error as any).response !== null) {
+                const response = (error as any).response as { data?: GoogleApiErrorResponseData };
 
-        if (typeof error === 'object' && error !== null && 'response' in error) {
-            const axiosError = error as { response?: { data?: GoogleApiErrorResponseData } };
-
-            if (axiosError.response && axiosError.response.data) {
-                const responseData = axiosError.response.data;
-                console.error('Google API Error Response Data:', responseData);
-
-                if (responseData.error && typeof responseData.error === 'object' && responseData.error.message) {
-                    errorMessage = responseData.error.message;
-                } else if (responseData.message) {
-                    errorMessage = responseData.message;
+                if (response.data && typeof response.data === 'object' && response.data !== null) {
+                    const responseData = response.data;
+                    if (responseData.error && typeof responseData.error === 'object' && responseData.error.message) {
+                        errorMessage = responseData.error.message;
+                    } else if (responseData.message) {
+                        errorMessage = responseData.message;
+                    }
                 }
             }
         }
