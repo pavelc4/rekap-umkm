@@ -106,28 +106,11 @@ async function appendIncomeToSheet(date: string, amount: string, description: st
     } catch (error: unknown) {
         console.error('Failed to append data to Google Sheet:', error);
 
-        let errorMessage = 'An unexpected error occurred while appending data.';
-
-        if (error instanceof Error) {
-            errorMessage = error.message;
-        } else if (typeof error === 'string') {
-            errorMessage = error;
-        } else if (typeof error === 'object' && error !== null) {
-            const potentialAxiosError = error as Partial<AxiosLikeError>;
-
-            if (potentialAxiosError.response && typeof potentialAxiosError.response === 'object' && potentialAxiosError.response !== null) {
-                const responseData = potentialAxiosError.response.data;
-
-                if (responseData && typeof responseData === 'object' && responseData !== null) {
-                    console.error('Google API Error Response Data:', responseData);
-
-                    if (responseData.error && typeof responseData.error === 'object' && responseData.error.message) {
-                        errorMessage = responseData.error.message;
-                    } else if (responseData.message) {
-                        errorMessage = responseData.message;
-                    }
-                }
-            }
+        let errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
+        if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.error?.message) {
+            errorMessage = (error as Partial<AxiosLikeError>).response?.data?.error?.message || errorMessage;
+        } else if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.message) {
+            errorMessage = (error as Partial<AxiosLikeError>).response?.data?.message || errorMessage;
         }
 
         throw new Error(`Could not append data to Google Sheet. Error: ${errorMessage}. Please check permissions, Sheet ID, and network connection.`);
@@ -157,24 +140,12 @@ async function createNewSheet(sheetTitle: string): Promise<boolean> {
         return true;
     } catch (error: unknown) {
         console.error(`Failed to create sheet "${sheetTitle}":`, error);
-        let errorMessage = 'An unexpected error occurred while creating sheet.';
-        if (error instanceof Error) {
-            errorMessage = error.message;
-        } else if (typeof error === 'string') {
-            errorMessage = error;
-        } else if (typeof error === 'object' && error !== null) {
-            const potentialAxiosError = error as Partial<AxiosLikeError>;
-            if (potentialAxiosError.response && typeof potentialAxiosError.response === 'object' && potentialAxiosError.response !== null) {
-                const responseData = potentialAxiosError.response.data;
-                if (responseData && typeof responseData === 'object' && responseData !== null) {
-                    console.error('Google API Error Response Data:', responseData);
-                    if (responseData.error && typeof responseData.error === 'object' && responseData.error.message) {
-                        errorMessage = responseData.error.message;
-                    } else if (responseData.message) {
-                        errorMessage = responseData.message;
-                    }
-                }
-            }
+
+        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
+        if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.error?.message) {
+            errorMessage = (error as Partial<AxiosLikeError>).response?.data?.error?.message || errorMessage;
+        } else if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.message) {
+            errorMessage = (error as Partial<AxiosLikeError>).response?.data?.message || errorMessage;
         }
         throw new Error(`Could not create sheet. Error: ${errorMessage}. Sheet name might already exist.`);
     }
@@ -235,9 +206,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             try {
                 await appendIncomeToSheet(date, formattedAmountIDR, description);
                 await sendMessage(chatId, `🎉 Berhasil! Income ${formattedAmountIDR} (${description}) sudah dicatat.`);
-            } catch (error) {
+            } catch (error: unknown) {
                 console.error(`[${new Date().toLocaleString('id-ID')}] Error handling /income command for chat ${chatId}:`, error);
-                await sendMessage(chatId, 'Maaf, terjadi kesalahan saat mencatat income. Silakan coba lagi nanti.');
+
+                const errorMessageForUser = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
+                if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.error?.message) {
+                    errorMessageForUser = (error as Partial<AxiosLikeError>).response?.data?.error?.message || errorMessageForUser;
+                } else if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.message) {
+                    errorMessageForUser = (error as Partial<AxiosLikeError>).response?.data?.message || errorMessageForUser;
+                }
+
+                await sendMessage(chatId, `❌ Maaf, terjadi kesalahan saat mencatat income. Pesan error: ${errorMessageForUser}. Silakan coba lagi nanti.`);
             }
         } else {
             await sendMessage(chatId, '🤔 Format salah. Gunakan: `/income <jumlah> <deskripsi>`. Contoh: `/income 150000 Penjualan Hari Ini` atau `/income 150k Penjualan Hari Ini`');
@@ -250,9 +229,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 try {
                     await createNewSheet(newSheetName);
                     await sendMessage(chatId, `✅ Sheet baru "${newSheetName}" berhasil dibuat!`);
-                } catch (error) {
+                } catch (error: unknown) {
                     console.error(`[${new Date().toLocaleString('id-ID')}] Error creating new sheet:`, error);
-                    await sendMessage(chatId, `❌ Gagal membuat sheet baru. Pesan error: ${error.message}.`);
+
+                    const errorMessageForUser = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
+                    if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.error?.message) {
+                        errorMessageForUser = (error as Partial<AxiosLikeError>).response?.data?.error?.message || errorMessageForUser;
+                    } else if (typeof error === 'object' && error !== null && 'response' in error && (error as Partial<AxiosLikeError>).response?.data?.message) {
+                        errorMessageForUser = (error as Partial<AxiosLikeError>).response?.data?.message || errorMessageForUser;
+                    }
+
+                    await sendMessage(chatId, `❌ Gagal membuat sheet baru. Pesan error: ${errorMessageForUser}.`);
                 }
             } else {
                 await sendMessage(chatId, '⚠️ Format salah. Gunakan: `/add_new_sheet <nama_sheet_baru>`. Contoh: `/add_new_sheet Laporan Juni`');
