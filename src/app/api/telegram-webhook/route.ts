@@ -33,10 +33,20 @@ async function sendMessage(chatId: number, text: string) {
                 text: text,
             }),
         });
-        console.log(`[${new Date().toLocaleString('id-ID')}] Message sent to chat ${chatId}: ${text}`);
+        console.log(`Message sent to chat ${chatId}: ${text}`);
     } catch (error) {
         console.error('Failed to send message to Telegram:', error);
     }
+}
+
+interface GoogleApiErrorResponseData {
+    error?: {
+        code?: number;
+        message?: string;
+        errors?: Array<{ domain: string; reason: string; message: string }>;
+        status?: string;
+    };
+    message?: string;
 }
 
 async function appendIncomeToSheet(date: string, amount: number, description: string): Promise<boolean> {
@@ -45,7 +55,7 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
         throw new Error('Google Sheet ID not configured. Please check your .env.local or Vercel settings.');
     }
 
-    const sheetName = 'Rekap-pengeluaran'; // <--- PERUBAHAN DI SINI
+    const sheetName = 'Rekap-pengeluaran';
     const range = `${sheetName}!A:C`;
 
     try {
@@ -57,10 +67,10 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
                 values: [[date, amount, description]],
             },
         });
-        console.log(`[${new Date().toLocaleString('id-ID')}] Data successfully appended to Google Sheet:`, response.data);
+        console.log('Data successfully appended to Google Sheet:', response.data);
         return true;
     } catch (error: unknown) {
-        console.error(`[${new Date().toLocaleString('id-ID')}] Failed to append data to Google Sheet:`, error);
+        console.error('Failed to append data to Google Sheet:', error);
 
         let errorMessage = 'An unexpected error occurred while appending data.';
 
@@ -71,17 +81,16 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
         }
 
         if (typeof error === 'object' && error !== null && 'response' in error) {
-            const axiosErrorResponse = (error as { response?: { data?: { error?: { message?: string } | string; message?: string } } }).response;
+            const axiosError = error as { response?: { data?: GoogleApiErrorResponseData } };
 
-            if (axiosErrorResponse?.data) {
-                console.error('Google API Error Response Data:', axiosErrorResponse.data);
+            if (axiosError.response && axiosError.response.data) {
+                const responseData = axiosError.response.data;
+                console.error('Google API Error Response Data:', responseData);
 
-                if (typeof axiosErrorResponse.data === 'object' && axiosErrorResponse.data !== null) {
-                    if ('error' in axiosErrorResponse.data && typeof (axiosErrorResponse.data as any).error === 'object' && (axiosErrorResponse.data as any).error !== null && 'message' in (axiosErrorResponse.data as any).error) {
-                        errorMessage = (axiosErrorResponse.data as any).error.message;
-                    } else if ('message' in axiosErrorResponse.data && typeof (axiosErrorResponse.data as any).message === 'string') {
-                        errorMessage = (axiosErrorResponse.data as any).message;
-                    }
+                if (responseData.error && typeof responseData.error === 'object' && responseData.error.message) {
+                    errorMessage = responseData.error.message;
+                } else if (responseData.message) {
+                    errorMessage = responseData.message;
                 }
             }
         }
@@ -95,14 +104,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const message = body.message;
 
     if (!message) {
-        console.log(`[${new Date().toLocaleString('id-ID')}] Received non-message update from Telegram.`);
+        console.log('Received non-message update from Telegram.');
         return NextResponse.json({ status: 'No message received' }, { status: 200 });
     }
 
     const chatId = message.chat.id;
     const text = message.text;
 
-    console.log(`[${new Date().toLocaleString('id-ID')}] Processing message from chat ${chatId}: "${text}"`);
+    console.log(`[${new Date().toLocaleString('id-ID')}] Received message from ${chatId}: "${text}"`);
 
     if (text && text.startsWith('/income')) {
         const parts = text.split(' ');
