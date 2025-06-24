@@ -49,6 +49,16 @@ interface GoogleApiErrorResponseData {
     message?: string;
 }
 
+interface AxiosLikeError extends Error {
+    response?: {
+        data?: GoogleApiErrorResponseData;
+        status?: number;
+        headers?: Record<string, string>;
+        config?: any;
+        request?: any;
+    };
+}
+
 async function appendIncomeToSheet(date: string, amount: number, description: string): Promise<boolean> {
     if (!GOOGLE_SHEET_ID) {
         console.error('Error: GOOGLE_SHEET_ID is not configured in environment variables.');
@@ -63,7 +73,7 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
             spreadsheetId: GOOGLE_SHEET_ID,
             range: range,
             valueInputOption: 'USER_ENTERED',
-            resource: {
+            requestBody: {
                 values: [[date, amount, description]],
             },
         });
@@ -72,18 +82,21 @@ async function appendIncomeToSheet(date: string, amount: number, description: st
     } catch (error: unknown) {
         console.error('Failed to append data to Google Sheet:', error);
 
-        let errorMessage = 'An unexpected error occurred.';
+        let errorMessage = 'An unexpected error occurred while appending data.';
 
         if (error instanceof Error) {
             errorMessage = error.message;
         } else if (typeof error === 'string') {
             errorMessage = error;
         } else if (typeof error === 'object' && error !== null) {
-            if ('response' in error && typeof (error as any).response === 'object' && (error as any).response !== null) {
-                const response = (error as any).response as { data?: GoogleApiErrorResponseData };
+            const potentialAxiosError = error as Partial<AxiosLikeError>;
 
-                if (response.data && typeof response.data === 'object' && response.data !== null) {
-                    const responseData = response.data;
+            if (potentialAxiosError.response && typeof potentialAxiosError.response === 'object' && potentialAxiosError.response !== null) {
+                const responseData = potentialAxiosError.response.data;
+
+                if (responseData && typeof responseData === 'object' && responseData !== null) {
+                    console.error('Google API Error Response Data:', responseData);
+
                     if (responseData.error && typeof responseData.error === 'object' && responseData.error.message) {
                         errorMessage = responseData.error.message;
                     } else if (responseData.message) {
